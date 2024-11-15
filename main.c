@@ -10,9 +10,9 @@
 #define MAX_TAGS 200
 
 typedef enum { START_TAG, END_TAG, PLAIN_TEXT, TK_EOF } TokenKind;
-typedef enum { TAG_HTML, TAG_BODY, TAG_DIV, TAG_SPAN, TAG_P, TAG_H1, TAG_H2, TAG_H3, TAG_UL, TAG_LI } TagKind;
-char *tag_names[] = {"html", "body", "div", "span", "p", "h1", "h2", "h3", "ul", "li"};
-int tag_sizes[] = {4, 4, 3, 4, 1, 2, 2, 2, 2, 2};
+typedef enum { TAG_HTML, TAG_BODY, TAG_DIV, TAG_SPAN, TAG_P, TAG_A, TAG_H1, TAG_H2, TAG_H3, TAG_UL, TAG_LI } TagKind;
+char *tag_names[] = {"html", "body", "div", "span", "p", "a", "h1", "h2", "h3", "ul", "li"};
+int tag_sizes[] = {4, 4, 3, 4, 1, 1, 2, 2, 2, 2, 2};
 static const int supported_count = sizeof(tag_sizes) / sizeof(tag_sizes[0]);
 
 typedef struct Token Token;

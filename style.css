@@ -15,3 +15,8 @@
     font-weight: bold;
     margin: 4px 0px;
 }
+
+.a {
+    color: #0000ff;
+    border-bottom: 1px solid #0000ff;
+}
