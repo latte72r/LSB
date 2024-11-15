@@ -1,2 +1,2 @@
-# lcb
+# LCB
 Latte's Compact Browser
