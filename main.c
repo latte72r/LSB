@@ -9,10 +9,11 @@
 
 #define MAX_TAGS 200
 
-typedef enum { START_TAG, END_TAG, PLAIN_TEXT, TK_EOF } TokenKind;
-typedef enum { TAG_DIV, TAG_SPAN, TAG_P, TAG_A, TAG_H1, TAG_H2, TAG_H3, TAG_UL, TAG_LI, TAG_EM, TAG_STRONG } TagKind;
-char *tag_names[] = {"div", "span", "p", "a", "h1", "h2", "h3", "ul", "li", "em", "strong"};
-int tag_sizes[] = {3, 4, 1, 1, 2, 2, 2, 2, 2, 2, 6};
+typedef enum { START_TAG, END_TAG, START_TAG_ONLY, PLAIN_TEXT, TK_EOF } TokenKind;
+
+typedef enum { TAG_DIV, TAG_SPAN, TAG_P, TAG_A, TAG_H1, TAG_H2, TAG_H3, TAG_UL, TAG_LI, TAG_EM, TAG_STRONG, TAG_BR, TAG_IMG } TagKind;
+char *tag_names[] = {"div", "span", "p", "a", "h1", "h2", "h3", "ul", "li", "em", "strong", "br", "img"};
+int tag_sizes[] = {3, 4, 1, 1, 2, 2, 2, 2, 2, 2, 6, 2, 3};
 static const int supported_count = sizeof(tag_sizes) / sizeof(tag_sizes[0]);
 
 typedef struct Token Token;
@@ -100,6 +101,29 @@ Token *tokenize() {
         }
         tag_selected = false;
 
+        // 単独タグ
+        if (startswith(p, "<br")) {
+            warning("brタグは無視されます\n");
+            cur = new_token(START_TAG_ONLY, cur);
+            cur->tag = TAG_BR;
+            p += 3;
+            while (*p != '>') {
+                p++;
+            }
+            p++;
+            continue;
+        } else if (startswith(p, "<img")) {
+            warning("imgタグは無視されます\n");
+            cur = new_token(START_TAG_ONLY, cur);
+            cur->tag = TAG_IMG;
+            p += 4;
+            while (*p != '>') {
+                p++;
+            }
+            p++;
+            continue;
+        }
+
         // 終了タグ
         if (startswith(p, "</")) {
             p += 2;
@@ -152,11 +176,18 @@ Token *tokenize() {
             if (!tag_selected) {
                 char buffer[200];
                 int i = 0;
+                int j = 0;
+                bool space2 = false;
                 while (*(p + i) != '>') {
-                    buffer[i] = *(p + i);
+                    if (isspace(*(p + i))) {
+                        space2 = true;
+                    } else if (!space2) {
+                        buffer[j] = *(p + i);
+                        j++;
+                    }
                     i++;
                 }
-                buffer[i] = '\0';
+                buffer[j] = '\0';
                 p += (i + 1);
                 warning("開始タグを無視しました: %s\n", buffer);
                 continue;
