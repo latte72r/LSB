@@ -10,9 +10,9 @@
 #define MAX_TAGS 200
 
 typedef enum { START_TAG, END_TAG, PLAIN_TEXT, TK_EOF } TokenKind;
-typedef enum { TAG_HTML, TAG_BODY, TAG_DIV, TAG_SPAN, TAG_P, TAG_A, TAG_H1, TAG_H2, TAG_H3, TAG_UL, TAG_LI } TagKind;
-char *tag_names[] = {"html", "body", "div", "span", "p", "a", "h1", "h2", "h3", "ul", "li"};
-int tag_sizes[] = {4, 4, 3, 4, 1, 1, 2, 2, 2, 2, 2};
+typedef enum { TAG_DIV, TAG_SPAN, TAG_P, TAG_A, TAG_H1, TAG_H2, TAG_H3, TAG_UL, TAG_LI, TAG_EM, TAG_STRONG } TagKind;
+char *tag_names[] = {"div", "span", "p", "a", "h1", "h2", "h3", "ul", "li", "em", "strong"};
+int tag_sizes[] = {3, 4, 1, 1, 2, 2, 2, 2, 2, 2, 6};
 static const int supported_count = sizeof(tag_sizes) / sizeof(tag_sizes[0]);
 
 typedef struct Token Token;
@@ -74,10 +74,13 @@ TagKind stack_pop() {
     return tag_stack[tag_count];
 }
 
-void consume_space(char **p) {
+bool consume_space(char **p) {
+    int count = 0;
     while (isspace(**p)) {
         (*p)++;
+        count++;
     }
+    return count > 0;
 }
 
 // Tokenize `user_input` and returns new tokens.
@@ -88,9 +91,10 @@ Token *tokenize() {
     Token *cur = &head;
     TagKind tag;
     bool tag_selected;
+    bool spaced;
 
     while (*p) {
-        consume_space(&p);
+        spaced = consume_space(&p);
         if (!*p) {
             break;
         }
@@ -198,13 +202,29 @@ Token *tokenize() {
         if ((*p != '<') && (*p != '>')) {
             char buffer[200];
             int i = 0;
-
-            // 英数字の部分を抽出
+            int length = 0;
+            if (spaced) {
+                buffer[length] = ' ';
+                length++;
+            }
             while ((*(p + i) != '<') && (*(p + i) != '>')) {
-                buffer[i] = *(p + i);
+                int count = 0;
+                while (isspace(*(p + i))) {
+                    i++;
+                    count++;
+                }
+                if (count > 0) {
+                    buffer[length] = ' ';
+                    length++;
+                }
+                if ((*(p + i) == '<') || (*(p + i) == '>')) {
+                    break;
+                }
+                buffer[length] = *(p + i);
+                length++;
                 i++;
             }
-            buffer[i] = '\0';
+            buffer[length] = '\0';
             cur = new_token(PLAIN_TEXT, cur);
             strcpy(cur->text, buffer);
             p += i;
@@ -252,12 +272,12 @@ int main(int argc, char **argv) {
 
     GtkCssProvider *provider = gtk_css_provider_new();
     gtk_css_provider_load_from_path(provider, "./style.css", NULL);
-    gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(provider),
-                                              GTK_STYLE_PROVIDER_PRIORITY_USER);
+    gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_USER);
 
     box_widgets[0] = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(window), box_widgets[0]);
     gtk_widget_set_halign(box_widgets[0], GTK_ALIGN_START);
+    gtk_widget_set_name(box_widgets[0], "window");
 
     token = tokenize();
 
@@ -267,8 +287,7 @@ int main(int argc, char **argv) {
             // printf("START_TAG: %s\n", tag_names[token->tag]);
             int orientation;
             int expand;
-            if ((token->tag == TAG_HTML) || (token->tag == TAG_BODY) || (token->tag == TAG_DIV) ||
-                (token->tag == TAG_UL)) {
+            if ((token->tag == TAG_DIV) || (token->tag == TAG_UL)) {
                 orientation = GTK_ORIENTATION_VERTICAL;
             } else {
                 orientation = GTK_ORIENTATION_HORIZONTAL;
