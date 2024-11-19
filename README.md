@@ -1,2 +1,2 @@
-# LCB
-Latte's Compact Browser
+# LSB
+Latte's Simple Browser
