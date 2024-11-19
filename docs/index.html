@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta property="og:title" content="Turtle graphics">
+    <meta property="og:type" content="website">
+    <meta property="og:image" content="./win_icon.gif">
+    <meta name="google-site-verification" content="0utQohS0QuJgV4Kxamh6Ut6XlZ6sP-ChKltZtUiKWug" />
+    <link rel="icon" type="image/gif" href="./win_icon.gif">
+    <title>Turtle graphics</title>
+
+    <link rel="stylesheet" type="text/css" href="./doctheme.css">
+    <script src="./jquery-3.7.1.min.js"></script>
+    <script src="./script.js"></script>
+</head>
+
+<body>
+    <header id="header">
+        <a id="header-title" href="./index.html">
+            <h1 id="main-title">Latte72</h1>
+        </a>
+        <nav>
+            <p class="nav-link">Home</p>
+            <div class="divider"></div>
+            <a href="https://github.com/latte72r/LSB/" class="nav-link" target="_blank">GitHub</a>
+        </nav>
+    </header>
+    <div id="blank"></div>
+    <div id="document">
+        <div id="main">
+            <section id="introduction">
+                <h2>Latte's Simple Browser とは？</h2>
+                <p><strong>Latte's Simple Browser ( LSB )</strong> は、独自に開発されたシンプルで軽量なブラウザです。</p>
+                <p>このプロジェクトは、ブラウザの基本機能を学びながら実装することを目的として設計されています。</p>
+            </section>
+            <section id="how-to-use">
+                <h2>使用方法</h2>
+                <p>このプログラムの実行には GCC と SDL2 が必要です。</p>
+                <h3>SDL2 のインストール</h3>
+                <p>Ubuntu で SDL2 をインストールするには、以下のコマンドを実行してください。</p>
+                <div class="notranslate">
+                    <pre>sudo apt install libsdl2-dev libsdl2-ttf-dev</pre>
+                </div>
+                <p>その他の環境での SDL2 のインストールに関しては、
+                    <a href="https://wiki.libsdl.org/SDL2/Installation" target="_blank">SDL Wiki</a> をご覧ください。
+                </p>
+                <h3>プログラムの実行</h3>
+                <p>以下のコマンドを実行して、ソースコードをダウンロードし、コンパイルしてください。</p>
+                <div class="notranslate">
+                    <pre>git clone https://github.com/Latte72R/LSB.git
+cd ./LSB
+gcc ./main.c ./parser.c -o lsb -lSDL2 -lSDL2_ttf
+./lsb ./test.html</pre>
+                </div>
+            </section>
+            <section id="github-page">
+                <h2>GitHubリポジトリ</h2>
+                <p>ソースコードはこちらのリポジトリで公開しています：<a href="https://github.com/latte72r/LSB/" target="_blank">GitHub</a>
+                </p>
+            </section>
+            <section id="about-author">
+                <h2>作者について</h2>
+                <p>作者のホームページはこちらからご覧いただけます：<a href="https://latte72r.github.io/" target="_blank">Latte72</a>
+                </p>
+                <span style="display: inline-block;">
+                    <a href="https://github.com/Latte72R" id="sns-link">
+                        <img id="github-logo" src="./logos/github-mark.png" alt="">
+                        @Latte72R</a>
+                </span>
+                <span style="display: inline-block;">
+                    <a href="https://x.com/Latte72R" id="sns-link">
+                        <img id="x-black" src="./logos/x-black.png" alt="">
+                        @Latte72R</a>
+                </span>
+            </section>
+        </div>
+    </div>
+
+    <footer id="footer">
+        <p>&copy; 2024 Latte72. All rights reserved.</p>
+    </footer>
+</body>
+
+</html>
