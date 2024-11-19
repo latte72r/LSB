@@ -260,13 +260,11 @@ pre::-webkit-scrollbar {
         width: 100%;
     }
 
-    #text-image-p {
-        text-align: center;
-    }
-
     #test-image {
-        width: 80%;
+        width: 90%;
         height: auto;
+        display: block;
+        margin: auto;
     }
 }
 
@@ -296,10 +294,6 @@ pre::-webkit-scrollbar {
     #blank {
         height: 7em;
         width: 100%;
-    }
-
-    #text-image-p {
-        text-align: left;
     }
 
     #test-image {
