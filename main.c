@@ -16,7 +16,6 @@ TTF_Font *font_p;
 TTF_Font *font_h1;
 TTF_Font *font_h2;
 TTF_Font *font_h3;
-SDL_Color textColor = {0, 0, 0};
 
 const int win_padding_x = 20;
 const int win_padding_y = 20;
@@ -53,7 +52,10 @@ void draw_window(Token *token) {
     bool font_italic = false;
     bool display = true;
     bool is_title = false;
+    bool underline = false;
+    int font_style = TTF_STYLE_NORMAL;
     TTF_Font *font = font_p;
+    SDL_Color textColor = {0, 0, 0};
 
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
     SDL_RenderClear(renderer);
@@ -87,6 +89,10 @@ void draw_window(Token *token) {
                 break;
             case TAG_P:
                 font = font_p;
+                break;
+            case TAG_A:
+                underline = true;
+                textColor = (SDL_Color){0, 0, 255};
                 break;
             case TAG_STRONG:
                 font = font_p;
@@ -146,6 +152,9 @@ void draw_window(Token *token) {
             } else if (token->tag == TAG_TITLE) {
                 display = true;
                 is_title = false;
+            } else if (token->tag == TAG_A) {
+                underline = false;
+                textColor = (SDL_Color){0, 0, 0};
             }
             break;
         case PLAIN_TEXT:
@@ -163,15 +172,17 @@ void draw_window(Token *token) {
             } else {
                 cor_x += last_width;
             }
-            if (font_bold && font_italic) {
-                TTF_SetFontStyle(font, TTF_STYLE_BOLD | TTF_STYLE_ITALIC);
-            } else if (font_bold) {
-                TTF_SetFontStyle(font, TTF_STYLE_BOLD);
-            } else if (font_italic) {
-                TTF_SetFontStyle(font, TTF_STYLE_ITALIC);
-            } else {
-                TTF_SetFontStyle(font, TTF_STYLE_NORMAL);
+            font_style = TTF_STYLE_NORMAL;
+            if (font_bold) {
+                font_style |= TTF_STYLE_BOLD;
             }
+            if (font_italic) {
+                font_style |= TTF_STYLE_ITALIC;
+            }
+            if (underline) {
+                font_style |= TTF_STYLE_UNDERLINE;
+            }
+            TTF_SetFontStyle(font, font_style);
             textSurface = TTF_RenderUTF8_Blended(font, token->text, textColor);
             textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
             SDL_QueryTexture(textTexture, NULL, NULL, &width, &height);
