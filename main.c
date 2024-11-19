@@ -1,361 +1,313 @@
 
-#include <ctype.h>
-#include <gtk/gtk.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
-#define MAX_TAGS 200
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_ttf.h>
 
-typedef enum { START_TAG, END_TAG, START_TAG_ONLY, PLAIN_TEXT, TK_EOF } TokenKind;
+#include "parser.h"
 
-typedef enum { TAG_DIV, TAG_SPAN, TAG_P, TAG_A, TAG_H1, TAG_H2, TAG_H3, TAG_UL, TAG_LI, TAG_EM, TAG_STRONG, TAG_BR, TAG_IMG } TagKind;
-char *tag_names[] = {"div", "span", "p", "a", "h1", "h2", "h3", "ul", "li", "em", "strong", "br", "img"};
-int tag_sizes[] = {3, 4, 1, 1, 2, 2, 2, 2, 2, 2, 6, 2, 3};
-static const int supported_count = sizeof(tag_sizes) / sizeof(tag_sizes[0]);
+SDL_Window *window;
+SDL_Renderer *renderer;
 
-typedef struct Token Token;
+TTF_Font *font_p;
+TTF_Font *font_h1;
+TTF_Font *font_h2;
+TTF_Font *font_h3;
+SDL_Color textColor = {0, 0, 0};
 
-struct Token {
-    TokenKind kind;
-    Token *next;
-    TagKind tag;
-    char text[200];
-    char html_id[20];
-    char html_class[20];
-};
+const int win_padding_x = 20;
+const int win_padding_y = 20;
+const int line_space = 10;
+const int scroll_step = 20;
+int window_height = 480;
+int window_width = 720;
 
-char user_input[20000];
-Token *token;
-TagKind tag_stack[MAX_TAGS];
-int tag_count = 0;
+int scroll_width = 0;
+int scroll_height = 0;
 
-// Reports an error and exit.
-void error(char *fmt, ...) {
-    va_list ap;
-    va_start(ap, fmt);
-    fprintf(stderr, "\e[0;31m");
-    vfprintf(stderr, fmt, ap);
-    fprintf(stderr, "\e[0;39m");
-    exit(1);
+int scroll_offset_x = 0;
+int scroll_offset_y = 0;
+
+void quit_sdl() {
+    SDL_DestroyWindow(window);
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    TTF_Quit();
+    SDL_Quit();
 }
 
-void warning(char *fmt, ...) {
-    va_list ap;
-    va_start(ap, fmt);
-    fprintf(stdout, "\e[0;33m");
-    vfprintf(stdout, fmt, ap);
-    fprintf(stdout, "\e[0;39m");
-}
+void draw_window(Token *token) {
+    SDL_Surface *textSurface;
+    SDL_Texture *textTexture;
+    int width, height;
+    int cor_x = 0;
+    int cor_y = 0;
+    int last_width = 0;
+    int last_height = 0;
+    int max_width = 0;
+    bool new_line = false;
+    bool font_bold = false;
+    bool font_italic = false;
+    bool display = true;
+    bool is_title = false;
+    TTF_Font *font = font_p;
 
-// Create a new token and add it as the next token of `cur`.
-Token *new_token(TokenKind kind, Token *cur) {
-    Token *tok = calloc(1, sizeof(Token));
-    tok->kind = kind;
-    cur->next = tok;
-    return tok;
-}
-
-bool startswith(char *p, char *q) { return memcmp(p, q, strlen(q)) == 0; }
-
-void stack_push(TagKind tag) {
-    tag_stack[tag_count++] = tag;
-    if (tag_count >= MAX_TAGS) {
-        error("Stack overflow\n");
-    }
-}
-
-TagKind stack_pop() {
-    tag_count--;
-    if (tag_count < 0) {
-        error("Stack underflow\n");
-    }
-    return tag_stack[tag_count];
-}
-
-bool consume_space(char **p) {
-    int count = 0;
-    while (isspace(**p)) {
-        (*p)++;
-        count++;
-    }
-    return count > 0;
-}
-
-// Tokenize `user_input` and returns new tokens.
-Token *tokenize() {
-    char *p = user_input;
-    Token head;
-    head.next = NULL;
-    Token *cur = &head;
-    TagKind tag;
-    bool tag_selected;
-    bool spaced;
-
-    while (*p) {
-        spaced = consume_space(&p);
-        if (!*p) {
-            break;
-        }
-        tag_selected = false;
-
-        // 単独タグ
-        if (startswith(p, "<br")) {
-            warning("brタグは無視されます\n");
-            cur = new_token(START_TAG_ONLY, cur);
-            cur->tag = TAG_BR;
-            p += 3;
-            while (*p != '>') {
-                p++;
-            }
-            p++;
-            continue;
-        } else if (startswith(p, "<img")) {
-            warning("imgタグは無視されます\n");
-            cur = new_token(START_TAG_ONLY, cur);
-            cur->tag = TAG_IMG;
-            p += 4;
-            while (*p != '>') {
-                p++;
-            }
-            p++;
-            continue;
-        }
-
-        // 終了タグ
-        if (startswith(p, "</")) {
-            p += 2;
-            cur = new_token(END_TAG, cur);
-            consume_space(&p);
-            for (int c = 0; c < supported_count; c++) {
-                if (startswith(p, tag_names[c])) {
-                    tag = c;
-                    p += tag_sizes[c];
-                    tag_selected = true;
-                    break;
-                }
-            }
-            if (!tag_selected) {
-                char buffer[200];
-                int i = 0;
-                while (*(p + i) != '>') {
-                    buffer[i] = *(p + i);
-                    i++;
-                }
-                buffer[i] = '\0';
-                p += (i + 1);
-                warning("終了タグを無視しました: %s\n", buffer);
-                continue;
-            }
-            while (*p != '>') {
-                p++;
-            }
-            p++;
-            if (stack_pop() != tag) {
-                error("開始タグと終了タグの対応が取れていません: %s\n", tag_names[tag]);
-            }
-            cur->tag = tag;
-            continue;
-        }
-
-        // 開始タグ
-        if (startswith(p, "<")) {
-            p++;
-            cur = new_token(START_TAG, cur);
-            consume_space(&p);
-            for (int c = 0; c < supported_count; c++) {
-                if (startswith(p, tag_names[c])) {
-                    tag = c;
-                    p += tag_sizes[c];
-                    tag_selected = true;
-                    break;
-                }
-            }
-            if (!tag_selected) {
-                char buffer[200];
-                int i = 0;
-                int j = 0;
-                bool space2 = false;
-                while (*(p + i) != '>') {
-                    if (isspace(*(p + i))) {
-                        space2 = true;
-                    } else if (!space2) {
-                        buffer[j] = *(p + i);
-                        j++;
-                    }
-                    i++;
-                }
-                buffer[j] = '\0';
-                p += (i + 1);
-                warning("開始タグを無視しました: %s\n", buffer);
-                continue;
-            }
-            consume_space(&p);
-            if (startswith(p, "id=\"")) {
-                p += 4;
-                char buffer[20];
-                int i = 0;
-                while (*(p + i) != '\"') {
-                    buffer[i] = *(p + i);
-                    i++;
-                }
-                buffer[i] = '\0';
-                p += (i + 1);
-                strcpy(cur->html_id, buffer);
-                printf("idを認識しました: %s\n", buffer);
-            }
-            consume_space(&p);
-            if (startswith(p, "class=\"")) {
-                p += 7;
-                char buffer[20];
-                int i = 0;
-                while (*(p + i) != '\"') {
-                    buffer[i] = *(p + i);
-                    i++;
-                }
-                buffer[i] = '\0';
-                p += (i + 1);
-                strcpy(cur->html_class, buffer);
-                printf("classを認識しました: %s\n", buffer);
-            }
-            consume_space(&p);
-            while (*p != '>') {
-                p++;
-            }
-            p++;
-            stack_push(tag);
-            cur->tag = tag;
-            continue;
-        }
-
-        if ((*p != '<') && (*p != '>')) {
-            char buffer[200];
-            int i = 0;
-            int length = 0;
-            if (spaced) {
-                buffer[length] = ' ';
-                length++;
-            }
-            while ((*(p + i) != '<') && (*(p + i) != '>')) {
-                int count = 0;
-                while (isspace(*(p + i))) {
-                    i++;
-                    count++;
-                }
-                if (count > 0) {
-                    buffer[length] = ' ';
-                    length++;
-                }
-                if ((*(p + i) == '<') || (*(p + i) == '>')) {
-                    break;
-                }
-                buffer[length] = *(p + i);
-                length++;
-                i++;
-            }
-            buffer[length] = '\0';
-            cur = new_token(PLAIN_TEXT, cur);
-            strcpy(cur->text, buffer);
-            p += i;
-            continue;
-        } else {
-            error("トークナイズできません: %s\n", *p);
-        }
-    }
-
-    new_token(TK_EOF, cur);
-    return head.next;
-}
-
-GtkWidget *box_widgets[100];
-
-int main(int argc, char **argv) {
-    if (argc != 2) {
-        error("引数の個数が正しくありません\n");
-        return 1;
-    }
-    FILE *fp;
-    int chr;
-    fp = fopen(argv[1], "r");
-    if (fp == NULL) {
-        printf("%s file not open!\n", argv[1]);
-        return 1;
-    }
-    int i = 0;
-    while ((chr = fgetc(fp)) != EOF) {
-        user_input[i] = chr;
-        i++;
-    }
-    user_input[i] = '\0';
-    fclose(fp);
-
-    GtkWidget *window;
-    int index = 0;
-
-    gtk_init(&argc, &argv);
-
-    window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-    gtk_window_set_title(GTK_WINDOW(window), "Hello");
-    gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER);
-    gtk_window_set_default_size(GTK_WINDOW(window), 400, 400);
-
-    GtkCssProvider *provider = gtk_css_provider_new();
-    gtk_css_provider_load_from_path(provider, "./style.css", NULL);
-    gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_USER);
-
-    box_widgets[0] = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_container_add(GTK_CONTAINER(window), box_widgets[0]);
-    gtk_widget_set_halign(box_widgets[0], GTK_ALIGN_START);
-    gtk_widget_set_name(box_widgets[0], "window");
-
-    token = tokenize();
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+    SDL_RenderClear(renderer);
 
     while (token->kind != TK_EOF) {
         switch (token->kind) {
         case START_TAG:
             // printf("START_TAG: %s\n", tag_names[token->tag]);
-            int orientation;
-            int expand;
             if ((token->tag == TAG_DIV) || (token->tag == TAG_UL)) {
-                orientation = GTK_ORIENTATION_VERTICAL;
-            } else {
-                orientation = GTK_ORIENTATION_HORIZONTAL;
+                new_line = true;
             }
-            box_widgets[index + 1] = gtk_box_new(orientation, 0);
-            gtk_box_pack_start(GTK_BOX(box_widgets[index]), box_widgets[index + 1], FALSE, FALSE, 0);
-            gtk_widget_set_margin_top(box_widgets[index + 1], 4);
-            gtk_widget_set_margin_bottom(box_widgets[index + 1], 4);
-            gtk_style_context_add_class(gtk_widget_get_style_context(box_widgets[index + 1]), tag_names[token->tag]);
-            if (token->html_id[0] != '\0') {
-                gtk_widget_set_name(box_widgets[index + 1], token->html_id);
+            switch (token->tag) {
+            case TAG_TITLE:
+                display = false;
+                is_title = true;
+                break;
+            case TAG_H1:
+                last_height += 20;
+                font = font_h1;
+                font_bold = true;
+                break;
+            case TAG_H2:
+                last_height += 15;
+                font = font_h2;
+                font_bold = true;
+                break;
+            case TAG_H3:
+                last_height += 10;
+                font = font_h3;
+                font_bold = true;
+                break;
+            case TAG_P:
+                font = font_p;
+                break;
+            case TAG_STRONG:
+                font = font_p;
+                font_bold = true;
+                break;
+            case TAG_EM:
+                font = font_p;
+                font_italic = true;
+                break;
+            case TAG_LI:
+                cor_x = 0;
+                cor_y += last_height;
+                new_line = false;
+                TTF_SetFontStyle(font_p, TTF_STYLE_BOLD);
+                textSurface = TTF_RenderUTF8_Blended(font_p, "・", textColor);
+                textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+                SDL_QueryTexture(textTexture, NULL, NULL, &width, &height);
+                SDL_Rect dstrect = {win_padding_x + cor_x - scroll_offset_x, win_padding_y + cor_y - scroll_offset_y, width, height};
+                SDL_RenderCopy(renderer, textTexture, NULL, &dstrect);
+                SDL_FreeSurface(textSurface);
+                max_width = (cor_x + width) > max_width ? (cor_x + width) : max_width;
+                last_width = width;
+                last_height = height + line_space;
+                break;
+            default:
+                break;
             }
-            if (token->html_class[0] != '\0') {
-                gtk_style_context_add_class(gtk_widget_get_style_context(box_widgets[index + 1]), token->html_class);
+            break;
+        case START_TAG_ONLY:
+            // printf("START_TAG_ONLY: %s\n", tag_names[token->tag]);
+            switch (token->tag) {
+            case TAG_BR:
+                cor_x = 0;
+                cor_y += last_height + line_space;
+                new_line = true;
+                break;
+
+            default:
+                break;
             }
-            if (token->tag == TAG_LI) {
-                GtkWidget *label = gtk_label_new(" ・ ");
-                gtk_box_pack_start(GTK_BOX(box_widgets[index + 1]), label, FALSE, FALSE, 0);
-            }
-            index++;
             break;
         case END_TAG:
             // printf("END_TAG: %s\n", tag_names[token->tag]);
-            index--;
+            if ((token->tag == TAG_DIV) || (token->tag == TAG_UL) || (token->tag == TAG_P) || (token->tag == TAG_H1) ||
+                (token->tag == TAG_H2) || (token->tag == TAG_H3)) {
+                new_line = true;
+            }
+            if ((token->tag == TAG_H1) || (token->tag == TAG_H2) || (token->tag == TAG_H3) || (token->tag == TAG_P)) {
+                font = font_p;
+                font_bold = false;
+            } else if (token->tag == TAG_STRONG) {
+                font = font_p;
+                font_bold = false;
+            } else if (token->tag == TAG_EM) {
+                font = font_p;
+                font_italic = false;
+            } else if (token->tag == TAG_TITLE) {
+                display = true;
+                is_title = false;
+            }
             break;
         case PLAIN_TEXT:
             // printf("PLAIN_TEXT: \"%s\"\n", token->text);
-            GtkWidget *label = gtk_label_new(token->text);
-            gtk_box_pack_start(GTK_BOX(box_widgets[index]), label, FALSE, FALSE, 0);
+            if (is_title) {
+                SDL_SetWindowTitle(window, token->text);
+            }
+            if (!display) {
+                break;
+            }
+            if (new_line) {
+                cor_x = 0;
+                cor_y += last_height;
+                new_line = false;
+            } else {
+                cor_x += last_width;
+            }
+            if (font_bold && font_italic) {
+                TTF_SetFontStyle(font, TTF_STYLE_BOLD | TTF_STYLE_ITALIC);
+            } else if (font_bold) {
+                TTF_SetFontStyle(font, TTF_STYLE_BOLD);
+            } else if (font_italic) {
+                TTF_SetFontStyle(font, TTF_STYLE_ITALIC);
+            } else {
+                TTF_SetFontStyle(font, TTF_STYLE_NORMAL);
+            }
+            textSurface = TTF_RenderUTF8_Blended(font, token->text, textColor);
+            textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+            SDL_QueryTexture(textTexture, NULL, NULL, &width, &height);
+            SDL_Rect dstrect = {win_padding_x + cor_x - scroll_offset_x, win_padding_y + cor_y - scroll_offset_y, width, height};
+            SDL_RenderCopy(renderer, textTexture, NULL, &dstrect);
+            SDL_FreeSurface(textSurface);
+            max_width = (cor_x + width) > max_width ? (cor_x + width) : max_width;
+            last_width = width;
+            last_height = height + line_space;
             break;
         }
         token = token->next;
     }
 
-    // ウィンドウの破棄信号を接続
-    g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
-    gtk_widget_show_all(window);
-    gtk_main();
+    scroll_width = max_width + win_padding_x * 2;
+    scroll_height = cor_y + last_height + win_padding_y * 2;
+
+    SDL_RenderPresent(renderer);
+    SDL_DestroyTexture(textTexture);
+}
+
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        error("引数の個数が正しくありません\n");
+    }
+    Token *token = parse_html(argv[1]);
+
+    // SDLの初期化
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+        error("SDL_Init Error: %s\n", SDL_GetError());
+    }
+
+    // SDL_ttfの初期化
+    if (TTF_Init() == -1) {
+        error("TTF_Init Error: %s\n", TTF_GetError());
+    }
+
+    // ウィンドウを作成
+    window = SDL_CreateWindow("LSB", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, window_width, window_height, SDL_WINDOW_SHOWN);
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "2");
+    if (!window) {
+        error("SDL_CreateWindow Error: %s\n", SDL_GetError());
+    }
+
+    // ウィンドウにアイコンを設定
+    SDL_Surface *icon = SDL_LoadBMP("./icon.bmp");
+    if (!icon) {
+        warning("SDL_LoadBMP Error: %s\n", SDL_GetError());
+    } else {
+        SDL_SetWindowIcon(window, icon);
+        SDL_FreeSurface(icon);
+    }
+
+    // レンダラーを作成
+    renderer = SDL_CreateRenderer(window, -2, SDL_RENDERER_ACCELERATED);
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 0);
+    if (!renderer) {
+        error("SDL_CreateRenderer Error: %s\n", SDL_GetError());
+    }
+
+    // フォントを開く
+    font_p = TTF_OpenFont("./RictyDiminished.ttf", 16);
+    font_h1 = TTF_OpenFont("./RictyDiminished.ttf", 48);
+    font_h2 = TTF_OpenFont("./RictyDiminished.ttf", 32);
+    font_h3 = TTF_OpenFont("./RictyDiminished.ttf", 20);
+    if (!font_p || !font_h1 || !font_h2 || !font_h3) {
+        error("TTF_OpenFont Error: %s\n", TTF_GetError());
+    }
+
+    draw_window(token);
+
+    bool running = true;
+    bool changed = true;
+    SDL_Event event;
+
+    while (running) {
+        SDL_PollEvent(&event);
+        if (event.type == SDL_WINDOWEVENT) {
+            if (event.window.event == SDL_WINDOWEVENT_CLOSE) {
+                running = false;
+            } else if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
+                window_width = event.window.data1;
+                window_height = event.window.data2;
+                SDL_RenderSetLogicalSize(renderer, window_width, window_height);
+                changed = true;
+            }
+        }
+
+        if (event.type == SDL_MOUSEWHEEL) {
+            if (event.wheel.x < 0) {
+                scroll_offset_x -= scroll_step;
+            } else if (event.wheel.x > 0) {
+                scroll_offset_x += scroll_step;
+            }
+
+            if (event.wheel.y < 0) {
+                scroll_offset_y += scroll_step;
+            } else if (event.wheel.y > 0) {
+                scroll_offset_y -= scroll_step;
+            }
+
+            if (scroll_offset_x < 0) {
+                scroll_offset_x = 0;
+            } else if (scroll_offset_x > scroll_width - window_width && scroll_width > window_width) {
+                scroll_offset_x = scroll_width - window_width;
+            }
+
+            if (scroll_offset_y < 0) {
+                scroll_offset_y = 0;
+            } else if (scroll_offset_y > scroll_height - window_height && scroll_height > window_height) {
+                scroll_offset_y = scroll_height - window_height;
+            }
+
+            while (SDL_PollEvent(&event)) {
+                continue;
+            }
+
+            changed = true;
+        }
+
+        if (changed) {
+            draw_window(token);
+            changed = false;
+        }
+
+        SDL_Delay(2);
+    }
+
+    TTF_CloseFont(font_p);
+    TTF_CloseFont(font_h1);
+    TTF_CloseFont(font_h2);
+    TTF_CloseFont(font_h3);
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    TTF_Quit();
+    SDL_Quit();
+
     return 0;
 }
