@@ -278,6 +278,12 @@ Token *tokenize() {
     Token head;
     head.next = NULL;
     head.css_property = calloc(1, sizeof(CssProperty));
+    head.css_property->color = (SDL_Color){0, 0, 0};
+    head.css_property->font_size = 100;
+    head.css_property->font_weight = FONT_NORMAL;
+    head.css_property->font_style = FONT_NORMAL;
+    head.css_property->text_decoration = TEXT_NONE;
+    head.css_property->display = DISPLAY_BLOCK;
     Token *cur = &head;
     Token *parent = &head;
     TagKind tag;
@@ -321,8 +327,6 @@ Token *tokenize() {
         // 終了タグ
         if (startswith(p, "</")) {
             p += 2;
-            parent = parent->parent;
-            cur = new_token(END_TAG, cur, parent);
             consume_space(&p);
             for (int c = 0; c < supported_count; c++) {
                 if (startswith(p, tag_names[c])) {
@@ -352,6 +356,8 @@ Token *tokenize() {
             if (stack_pop() != tag) {
                 error("開始タグと終了タグの対応が取れていません: %s\n", tag_names[tag]);
             }
+            parent = parent->parent;
+            cur = new_token(END_TAG, cur, parent);
             cur->tag = tag;
             continue;
         }
@@ -381,9 +387,9 @@ Token *tokenize() {
         // 開始タグ
         if (startswith(p, "<")) {
             p++;
-            consume_space(&p);
             if (startswith(p, "div")) {
                 p += 3;
+                consume_space(&p);
                 cur = new_token(START_TAG, cur, parent);
                 cur->tag = TAG_DIV;
                 stack_push(TAG_DIV);

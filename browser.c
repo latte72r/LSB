@@ -243,6 +243,19 @@ int main(int argc, char *argv[]) {
             } else if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
                 window_width = event.window.data1;
                 window_height = event.window.data2;
+
+                if (scroll_offset_x <= 0 || scroll_width < window_width) {
+                    scroll_offset_x = 0;
+                } else if (scroll_offset_x > scroll_width - window_width) {
+                    scroll_offset_x = scroll_width - window_width;
+                }
+
+                if (scroll_offset_y <= 0 || scroll_height < window_height) {
+                    scroll_offset_y = 0;
+                } else if (scroll_offset_y > scroll_height - window_height) {
+                    scroll_offset_y = scroll_height - window_height;
+                }
+
                 // printf("window_width: %d, window_height: %d\n", window_width, window_height);
                 SDL_RenderSetLogicalSize(renderer, window_width, window_height);
                 changed = true;
