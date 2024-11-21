@@ -8,7 +8,17 @@
 
 #include <SDL2/SDL.h>
 
+#ifndef BROWSER_PARSER_H
+#define BROWSER_PARSER_H
+
 #define MAX_TAGS 200
+
+static char *tag_names[] = {"div", "span", "p", "a", "h1", "h2", "h3", "ul", "li", "em", "strong", "br", "img", "title", "section"};
+static const int supported_count = sizeof(tag_names) / sizeof(tag_names[0]);
+
+static char *convert_names[] = {"&copy;", "&lt;", "&gt;", "&amp;", "&quot;", "&apos;"};
+static char *convert_values[] = {"©", "<", ">", "&", "\"", "'"};
+static const int convert_count = sizeof(convert_names) / sizeof(convert_names[0]);
 
 typedef enum { START_TAG, END_TAG, START_TAG_ONLY, PLAIN_TEXT, TK_EOF } TokenKind;
 
@@ -30,14 +40,19 @@ typedef enum {
     TAG_SECTION
 } TagKind;
 
+typedef enum { FONT_NORMAL, FONT_BOLD, FONT_ITALIC } FontKind;
+typedef enum { TEXT_NONE, TEXT_UNDERLINE } TextDecoration;
+typedef enum { DISPLAY_NONE, DISPLAY_BLOCK, DISPLAY_INLINE } Display;
+
 typedef struct CssProperty CssProperty;
 
 struct CssProperty {
     SDL_Color color;
     int font_size;
-    bool font_bold;
-    bool font_italic;
-    bool text_underline;
+    FontKind font_weight;
+    FontKind font_style;
+    TextDecoration text_decoration;
+    Display display;
 };
 
 typedef struct Token Token;
@@ -45,6 +60,7 @@ typedef struct Token Token;
 struct Token {
     TokenKind kind;
     Token *next;
+    Token *parent;
     TagKind tag;
     CssProperty *css_property;
     char text[200];
@@ -57,3 +73,5 @@ void error(char *fmt, ...);
 void warning(char *fmt, ...);
 
 Token *parse_html(char *file_name);
+
+#endif

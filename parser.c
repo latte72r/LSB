@@ -8,13 +8,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-char *tag_names[] = {"div", "span", "p", "a", "h1", "h2", "h3", "ul", "li", "em", "strong", "br", "img", "title", "section"};
-static const int supported_count = sizeof(tag_names) / sizeof(tag_names[0]);
-
-char *convert_names[] = {"&copy;", "&lt;", "&gt;", "&amp;", "&quot;", "&apos;"};
-char *convert_values[] = {"©", "<", ">", "&", "\"", "'"};
-static const int convert_count = sizeof(convert_names) / sizeof(convert_names[0]);
-
 char user_input[20000];
 Token *token;
 TagKind tag_stack[MAX_TAGS];
@@ -38,10 +31,18 @@ void warning(char *fmt, ...) {
     fprintf(stdout, "\e[0;39m");
 }
 
-Token *new_token(TokenKind kind, Token *cur) {
+Token *new_token(TokenKind kind, Token *cur, Token *parent) {
     Token *tok = calloc(1, sizeof(Token));
-    CssProperty *css_property = calloc(1, sizeof(CssProperty));
     tok->kind = kind;
+    tok->parent = parent;
+    CssProperty *css_property = calloc(1, sizeof(CssProperty));
+    css_property->color = (SDL_Color){0, 0, 0};
+    css_property->font_size = 100;
+    css_property->font_weight = FONT_NORMAL;
+    css_property->font_style = FONT_NORMAL;
+    css_property->text_decoration = TEXT_NONE;
+    css_property->display = DISPLAY_BLOCK;
+    tok->css_property = css_property;
     cur->next = tok;
     return tok;
 }
@@ -72,41 +73,26 @@ bool consume_space(char **p) {
     return count > 0;
 }
 
-SDL_Color parse_color(char color_string[20]) {
-    SDL_Color color;
-    consume_space(&color_string);
-    if (startswith(color_string, "(")) {
-        color_string++;
-        consume_space(&color_string);
-        color.r = strtol(color_string, &color_string, 10);
-        if (startswith(color_string, ",")) {
-            color_string++;
-        } else {
-            error("colorのパースに失敗しました: %s\n", color_string);
-        }
-        consume_space(&color_string);
-        color.g = strtol(color_string, &color_string, 10);
-        if (startswith(color_string, ",")) {
-            color_string++;
-        } else {
-            error("colorのパースに失敗しました: %s\n", color_string);
-        }
-        consume_space(&color_string);
-        color.b = strtol(color_string, &color_string, 10);
-        consume_space(&color_string);
-        if (startswith(color_string, ")")) {
-            color_string++;
-        } else {
-            error("colorのパースに失敗しました: %s\n", color_string);
-        }
+void parse_color(char color_string[7], SDL_Color *color) {
+    char buffer[3];
+    buffer[2] = '\0';
+    if (startswith(color_string, "#")) {
+        buffer[0] = color_string[1];
+        buffer[1] = color_string[2];
+        color->r = strtol(buffer, NULL, 16);
+        buffer[0] = color_string[3];
+        buffer[1] = color_string[4];
+        color->g = strtol(buffer, NULL, 16);
+        buffer[0] = color_string[5];
+        buffer[1] = color_string[6];
+        color->b = strtol(buffer, NULL, 16);
     } else {
         error("colorのパースに失敗しました: %s\n", color_string);
     }
-    return color;
+    // printf("color: (%d, %d, %d)\n", color->r, color->g, color->b);
 }
 
-CssProperty *parse_css(char *css_style) {
-    CssProperty *css_property = calloc(1, sizeof(CssProperty));
+CssProperty *parse_css(char *css_style, CssProperty *css_property) {
     char buffer[20];
     consume_space(&css_style);
     while (*css_style) {
@@ -125,7 +111,7 @@ CssProperty *parse_css(char *css_style) {
             }
             css_style++;
             buffer[i] = '\0';
-            css_property->color = parse_color(buffer);
+            parse_color(buffer, &(css_property->color));
         } else if (startswith(css_style, "font-size:")) {
             css_style += 10;
             consume_space(&css_style);
@@ -134,6 +120,10 @@ CssProperty *parse_css(char *css_style) {
                 buffer[i] = *css_style;
                 i++;
                 css_style++;
+            }
+            if (buffer[i - 1] != '%') {
+                buffer[i] = '\0';
+                error("font-sizeのパースに失敗しました: %s\n", buffer);
             }
             css_style++;
             buffer[i] = '\0';
@@ -149,10 +139,12 @@ CssProperty *parse_css(char *css_style) {
             }
             css_style++;
             buffer[i] = '\0';
-            if (startswith(buffer, "bold")) {
-                css_property->font_bold = true;
+            if (startswith(buffer, "normal")) {
+                css_property->font_weight = FONT_NORMAL;
+            } else if (startswith(buffer, "bold")) {
+                css_property->font_weight = FONT_BOLD;
             } else {
-                css_property->font_bold = false;
+                error("font-weightのパースに失敗しました: %s\n", buffer);
             }
         } else if (startswith(css_style, "font-style:")) {
             css_style += 11;
@@ -165,10 +157,12 @@ CssProperty *parse_css(char *css_style) {
             }
             css_style++;
             buffer[i] = '\0';
-            if (startswith(buffer, "italic")) {
-                css_property->font_italic = true;
+            if (startswith(buffer, "normal")) {
+                css_property->font_style = FONT_NORMAL;
+            } else if (startswith(buffer, "italic")) {
+                css_property->font_style = FONT_ITALIC;
             } else {
-                css_property->font_italic = false;
+                error("font-styleのパースに失敗しました: %s\n", buffer);
             }
         } else if (startswith(css_style, "text-decoration:")) {
             css_style += 15;
@@ -181,10 +175,32 @@ CssProperty *parse_css(char *css_style) {
             }
             css_style++;
             buffer[i] = '\0';
-            if (startswith(buffer, "underline")) {
-                css_property->text_underline = true;
+            if (startswith(buffer, "none")) {
+                css_property->text_decoration = TEXT_NONE;
+            } else if (startswith(buffer, "underline")) {
+                css_property->text_decoration = TEXT_UNDERLINE;
             } else {
-                css_property->text_underline = false;
+                error("text-decorationのパースに失敗しました: %s\n", buffer);
+            }
+        } else if (startswith(css_style, "display:")) {
+            css_style += 8;
+            consume_space(&css_style);
+            int i = 0;
+            while (*css_style != ';') {
+                buffer[i] = *css_style;
+                i++;
+                css_style++;
+            }
+            css_style++;
+            buffer[i] = '\0';
+            if (startswith(buffer, "none")) {
+                css_property->display = DISPLAY_NONE;
+            } else if (startswith(buffer, "block")) {
+                css_property->display = DISPLAY_BLOCK;
+            } else if (startswith(buffer, "inline")) {
+                css_property->display = DISPLAY_INLINE;
+            } else {
+                error("displayのパースに失敗しました: %s\n", buffer);
             }
         } else {
             int i = 0;
@@ -207,6 +223,53 @@ CssProperty *parse_css(char *css_style) {
             continue;
         }
     }
+    return css_property;
+}
+
+void consume_style(Token *cur, char **p) {
+    char buffer[40];
+    int i = 0;
+    consume_space(p);
+    if (startswith(*p, "id=\"")) {
+        (*p) += 4;
+        while (*(*p + i) != '\"') {
+            buffer[i] = *(*p + i);
+            i++;
+        }
+        buffer[i] = '\0';
+        (*p) += (i + 1);
+        strcpy(cur->html_id, buffer);
+        warning("idは利用できません\n");
+    }
+    consume_space(p);
+    if (startswith(*p, "class=\"")) {
+        *p += 7;
+        while (*(*p + i) != '\"') {
+            buffer[i] = *(*p + i);
+            i++;
+        }
+        buffer[i] = '\0';
+        (*p) += (i + 1);
+        strcpy(cur->html_class, buffer);
+        warning("classは利用できません\n");
+    }
+    consume_space(p);
+    if (startswith(*p, "style=\"")) {
+        (*p) += 7;
+        while (*(*p + i) != '\"') {
+            buffer[i] = *(*p + i);
+            i++;
+        }
+        buffer[i] = '\0';
+        (*p) += (i + 1);
+        parse_css(buffer, cur->css_property);
+        // printf("styleを認識しました: %s\n", buffer);
+    }
+    consume_space(p);
+    while (**p != '>') {
+        (*p)++;
+    }
+    (*p)++;
 }
 
 // Tokenize `user_input` and returns new tokens.
@@ -214,7 +277,9 @@ Token *tokenize() {
     char *p = user_input;
     Token head;
     head.next = NULL;
+    head.css_property = calloc(1, sizeof(CssProperty));
     Token *cur = &head;
+    Token *parent = &head;
     TagKind tag;
     CssProperty *css_property;
     bool tag_selected;
@@ -246,7 +311,7 @@ Token *tokenize() {
         // 特殊文字
         for (int c = 0; c < convert_count; c++) {
             if (startswith(p, convert_names[c])) {
-                cur = new_token(PLAIN_TEXT, cur);
+                cur = new_token(PLAIN_TEXT, cur, parent);
                 strcpy(cur->text, convert_values[c]);
                 p += strlen(convert_names[c]);
                 continue;
@@ -256,13 +321,15 @@ Token *tokenize() {
         // 終了タグ
         if (startswith(p, "</")) {
             p += 2;
-            cur = new_token(END_TAG, cur);
+            parent = parent->parent;
+            cur = new_token(END_TAG, cur, parent);
             consume_space(&p);
             for (int c = 0; c < supported_count; c++) {
                 if (startswith(p, tag_names[c])) {
                     tag = c;
                     p += strlen(tag_names[c]);
                     tag_selected = true;
+                    // printf("終了タグを登録しました: %s\n", tag_names[tag]);
                     break;
                 }
             }
@@ -291,7 +358,7 @@ Token *tokenize() {
 
         // 単独タグ
         if (startswith(p, "<br")) {
-            cur = new_token(START_TAG_ONLY, cur);
+            cur = new_token(START_TAG_ONLY, cur, parent);
             cur->tag = TAG_BR;
             p += 3;
             while (*p != '>') {
@@ -301,7 +368,7 @@ Token *tokenize() {
             continue;
         } else if (startswith(p, "<img")) {
             warning("imgタグは無視されます\n");
-            cur = new_token(START_TAG_ONLY, cur);
+            cur = new_token(START_TAG_ONLY, cur, parent);
             cur->tag = TAG_IMG;
             p += 4;
             while (*p != '>') {
@@ -314,17 +381,172 @@ Token *tokenize() {
         // 開始タグ
         if (startswith(p, "<")) {
             p++;
-            cur = new_token(START_TAG, cur);
             consume_space(&p);
-            for (int c = 0; c < supported_count; c++) {
-                if (startswith(p, tag_names[c])) {
-                    tag = c;
-                    p += strlen(tag_names[c]);
-                    tag_selected = true;
-                    break;
-                }
-            }
-            if (!tag_selected) {
+            if (startswith(p, "div")) {
+                p += 3;
+                cur = new_token(START_TAG, cur, parent);
+                cur->tag = TAG_DIV;
+                stack_push(TAG_DIV);
+                cur->css_property->display = DISPLAY_BLOCK;
+                cur->css_property->color = cur->parent->css_property->color;
+                cur->css_property->font_size = cur->parent->css_property->font_size;
+                cur->css_property->font_weight = cur->parent->css_property->font_weight;
+                cur->css_property->font_style = cur->parent->css_property->font_style;
+                cur->css_property->text_decoration = cur->parent->css_property->text_decoration;
+                consume_style(cur, &p);
+                parent = cur;
+            } else if (startswith(p, "span")) {
+                p += 4;
+                cur = new_token(START_TAG, cur, parent);
+                cur->tag = TAG_SPAN;
+                stack_push(TAG_SPAN);
+                cur->css_property->display = DISPLAY_INLINE;
+                cur->css_property->color = cur->parent->css_property->color;
+                cur->css_property->font_size = cur->parent->css_property->font_size;
+                cur->css_property->font_weight = cur->parent->css_property->font_weight;
+                cur->css_property->font_style = cur->parent->css_property->font_style;
+                cur->css_property->text_decoration = cur->parent->css_property->text_decoration;
+                consume_style(cur, &p);
+                parent = cur;
+            } else if (startswith(p, "h1")) {
+                p += 2;
+                cur = new_token(START_TAG, cur, parent);
+                cur->tag = TAG_H1;
+                stack_push(TAG_H1);
+                cur->css_property->display = DISPLAY_BLOCK;
+                cur->css_property->font_weight = FONT_BOLD;
+                cur->css_property->color = cur->parent->css_property->color;
+                cur->css_property->font_size = cur->parent->css_property->font_size;
+                cur->css_property->font_style = cur->parent->css_property->font_style;
+                cur->css_property->text_decoration = cur->parent->css_property->text_decoration;
+                consume_style(cur, &p);
+                parent = cur;
+            } else if (startswith(p, "h2")) {
+                p += 2;
+                cur = new_token(START_TAG, cur, parent);
+                cur->tag = TAG_H2;
+                stack_push(TAG_H2);
+                cur->css_property->display = DISPLAY_BLOCK;
+                cur->css_property->font_weight = FONT_BOLD;
+                cur->css_property->color = cur->parent->css_property->color;
+                cur->css_property->font_size = cur->parent->css_property->font_size;
+                cur->css_property->font_style = cur->parent->css_property->font_style;
+                cur->css_property->text_decoration = cur->parent->css_property->text_decoration;
+                consume_style(cur, &p);
+                parent = cur;
+            } else if (startswith(p, "h3")) {
+                p += 2;
+                cur = new_token(START_TAG, cur, parent);
+                cur->tag = TAG_H3;
+                stack_push(TAG_H3);
+                cur->css_property->display = DISPLAY_BLOCK;
+                cur->css_property->font_weight = FONT_BOLD;
+                cur->css_property->color = cur->parent->css_property->color;
+                cur->css_property->font_size = cur->parent->css_property->font_size;
+                cur->css_property->font_style = cur->parent->css_property->font_style;
+                cur->css_property->text_decoration = cur->parent->css_property->text_decoration;
+                consume_style(cur, &p);
+                parent = cur;
+            } else if (startswith(p, "ul")) {
+                p += 2;
+                cur = new_token(START_TAG, cur, parent);
+                cur->tag = TAG_UL;
+                stack_push(TAG_UL);
+                cur->css_property->display = DISPLAY_BLOCK;
+                cur->css_property->color = cur->parent->css_property->color;
+                cur->css_property->font_size = cur->parent->css_property->font_size;
+                cur->css_property->font_weight = cur->parent->css_property->font_weight;
+                cur->css_property->font_style = cur->parent->css_property->font_style;
+                cur->css_property->text_decoration = cur->parent->css_property->text_decoration;
+                consume_style(cur, &p);
+                parent = cur;
+            } else if (startswith(p, "li")) {
+                p += 2;
+                cur = new_token(START_TAG, cur, parent);
+                cur->tag = TAG_LI;
+                stack_push(TAG_LI);
+                cur->css_property->display = DISPLAY_BLOCK;
+                cur->css_property->color = cur->parent->css_property->color;
+                cur->css_property->font_size = cur->parent->css_property->font_size;
+                cur->css_property->font_weight = cur->parent->css_property->font_weight;
+                cur->css_property->font_style = cur->parent->css_property->font_style;
+                cur->css_property->text_decoration = cur->parent->css_property->text_decoration;
+                consume_style(cur, &p);
+                parent = cur;
+            } else if (startswith(p, "em")) {
+                p += 2;
+                cur = new_token(START_TAG, cur, parent);
+                cur->tag = TAG_EM;
+                stack_push(TAG_EM);
+                cur->css_property->display = DISPLAY_INLINE;
+                cur->css_property->font_style = FONT_ITALIC;
+                cur->css_property->color = cur->parent->css_property->color;
+                cur->css_property->font_size = cur->parent->css_property->font_size;
+                cur->css_property->font_weight = cur->parent->css_property->font_weight;
+                cur->css_property->text_decoration = cur->parent->css_property->text_decoration;
+                consume_style(cur, &p);
+                parent = cur;
+            } else if (startswith(p, "strong")) {
+                p += 6;
+                cur = new_token(START_TAG, cur, parent);
+                cur->tag = TAG_STRONG;
+                stack_push(TAG_STRONG);
+                cur->css_property->display = DISPLAY_INLINE;
+                cur->css_property->font_weight = FONT_BOLD;
+                cur->css_property->color = cur->parent->css_property->color;
+                cur->css_property->font_size = cur->parent->css_property->font_size;
+                cur->css_property->font_style = cur->parent->css_property->font_style;
+                cur->css_property->text_decoration = cur->parent->css_property->text_decoration;
+                consume_style(cur, &p);
+                parent = cur;
+            } else if (startswith(p, "title")) {
+                p += 5;
+                cur = new_token(START_TAG, cur, parent);
+                cur->tag = TAG_TITLE;
+                stack_push(TAG_TITLE);
+                cur->css_property->display = DISPLAY_NONE;
+                consume_style(cur, &p);
+                parent = cur;
+            } else if (startswith(p, "section")) {
+                p += 7;
+                cur = new_token(START_TAG, cur, parent);
+                cur->tag = TAG_SECTION;
+                stack_push(TAG_SECTION);
+                cur->css_property->display = DISPLAY_BLOCK;
+                cur->css_property->color = cur->parent->css_property->color;
+                cur->css_property->font_size = cur->parent->css_property->font_size;
+                cur->css_property->font_weight = cur->parent->css_property->font_weight;
+                cur->css_property->font_style = cur->parent->css_property->font_style;
+                cur->css_property->text_decoration = cur->parent->css_property->text_decoration;
+                consume_style(cur, &p);
+                parent = cur;
+            } else if (startswith(p, "p")) {
+                p += 1;
+                cur = new_token(START_TAG, cur, parent);
+                cur->tag = TAG_P;
+                stack_push(TAG_P);
+                cur->css_property->display = DISPLAY_BLOCK;
+                cur->css_property->color = cur->parent->css_property->color;
+                cur->css_property->font_size = cur->parent->css_property->font_size;
+                cur->css_property->font_weight = cur->parent->css_property->font_weight;
+                cur->css_property->font_style = cur->parent->css_property->font_style;
+                cur->css_property->text_decoration = cur->parent->css_property->text_decoration;
+                consume_style(cur, &p);
+                parent = cur;
+            } else if (startswith(p, "a")) {
+                p += 1;
+                cur = new_token(START_TAG, cur, parent);
+                cur->tag = TAG_A;
+                stack_push(TAG_A);
+                cur->css_property->display = DISPLAY_INLINE;
+                cur->css_property->color = (SDL_Color){0, 0, 255};
+                cur->css_property->text_decoration = TEXT_UNDERLINE;
+                cur->css_property->font_size = cur->parent->css_property->font_size;
+                cur->css_property->font_weight = cur->parent->css_property->font_weight;
+                cur->css_property->font_style = cur->parent->css_property->font_style;
+                consume_style(cur, &p);
+                parent = cur;
+            } else {
                 char buffer[200];
                 int i = 0;
                 int j = 0;
@@ -343,60 +565,9 @@ Token *tokenize() {
                 warning("開始タグを無視しました: %s\n", buffer);
                 continue;
             }
-            consume_space(&p);
-            if (startswith(p, "id=\"")) {
-                p += 4;
-                char buffer[20];
-                int i = 0;
-                while (*(p + i) != '\"') {
-                    buffer[i] = *(p + i);
-                    i++;
-                }
-                buffer[i] = '\0';
-                p += (i + 1);
-                strcpy(cur->html_id, buffer);
-                warning("idは利用できません\n");
-            }
-            consume_space(&p);
-            if (startswith(p, "class=\"")) {
-                p += 7;
-                char buffer[20];
-                int i = 0;
-                while (*(p + i) != '\"') {
-                    buffer[i] = *(p + i);
-                    i++;
-                }
-                buffer[i] = '\0';
-                p += (i + 1);
-                strcpy(cur->html_class, buffer);
-                warning("classは利用できません\n");
-            }
-            consume_space(&p);
-            if (startswith(p, "style=\"")) {
-                p += 7;
-                char buffer[40];
-                int i = 0;
-                while (*(p + i) != '\"') {
-                    buffer[i] = *(p + i);
-                    i++;
-                }
-                buffer[i] = '\0';
-                p += (i + 1);
-                css_property = parse_css(buffer);
-                cur->css_property = css_property;
-                // printf("styleを認識しました: %s\n", buffer);
-            }
-            consume_space(&p);
-            while (*p != '>') {
-                p++;
-            }
-            p++;
-            stack_push(tag);
-            cur->tag = tag;
+            // printf("開始タグを登録しました: %s\n", tag_names[cur->tag]);
             continue;
-        }
-
-        if ((*p != '<') && (*p != '>')) {
+        } else if ((*p != '<') && (*p != '>')) {
             char buffer[200];
             int i = 0;
             int length = 0;
@@ -422,16 +593,22 @@ Token *tokenize() {
                 i++;
             }
             buffer[length] = '\0';
-            cur = new_token(PLAIN_TEXT, cur);
+            cur = new_token(PLAIN_TEXT, cur, parent);
             strcpy(cur->text, buffer);
             p += i;
+            cur->css_property->display = cur->parent->css_property->display;
+            cur->css_property->color = cur->parent->css_property->color;
+            cur->css_property->font_size = cur->parent->css_property->font_size;
+            cur->css_property->font_weight = cur->parent->css_property->font_weight;
+            cur->css_property->font_style = cur->parent->css_property->font_style;
+            cur->css_property->text_decoration = cur->parent->css_property->text_decoration;
             continue;
         } else {
             error("トークナイズできません: %s\n", *p);
         }
     }
 
-    new_token(TK_EOF, cur);
+    new_token(TK_EOF, cur, parent);
     return head.next;
 }
 

@@ -1,4 +1,5 @@
 
+#include <math.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -24,6 +25,11 @@ const int scroll_step = 20;
 int window_height = 480;
 int window_width = 720;
 
+const int font_size_p = 16;
+const int font_size_h1 = 48;
+const int font_size_h2 = 32;
+const int font_size_h3 = 20;
+
 int scroll_width = 0;
 int scroll_height = 0;
 
@@ -48,14 +54,9 @@ void draw_window(Token *token) {
     int last_height = 0;
     int max_width = 0;
     bool new_line = false;
-    bool font_bold = false;
-    bool font_italic = false;
-    bool display = true;
     bool is_title = false;
-    bool underline = false;
     int font_style = TTF_STYLE_NORMAL;
     TTF_Font *font = font_p;
-    SDL_Color textColor = {0, 0, 0};
 
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
     SDL_RenderClear(renderer);
@@ -64,50 +65,34 @@ void draw_window(Token *token) {
         switch (token->kind) {
         case START_TAG:
             // printf("START_TAG: %s\n", tag_names[token->tag]);
-            if ((token->tag == TAG_DIV) || (token->tag == TAG_UL) || (token->tag == TAG_SECTION)) {
+            if (token->tag == TAG_DIV || token->tag == TAG_UL || token->tag == TAG_SECTION) {
                 new_line = true;
             }
             switch (token->tag) {
             case TAG_TITLE:
-                display = false;
                 is_title = true;
                 break;
             case TAG_H1:
                 last_height += 20;
                 font = font_h1;
-                font_bold = true;
                 break;
             case TAG_H2:
                 last_height += 15;
                 font = font_h2;
-                font_bold = true;
                 break;
             case TAG_H3:
                 last_height += 10;
                 font = font_h3;
-                font_bold = true;
                 break;
             case TAG_P:
                 font = font_p;
-                break;
-            case TAG_A:
-                underline = true;
-                textColor = (SDL_Color){0, 0, 255};
-                break;
-            case TAG_STRONG:
-                font = font_p;
-                font_bold = true;
-                break;
-            case TAG_EM:
-                font = font_p;
-                font_italic = true;
                 break;
             case TAG_LI:
                 cor_x = 0;
                 cor_y += last_height;
                 new_line = false;
                 TTF_SetFontStyle(font_p, TTF_STYLE_BOLD);
-                textSurface = TTF_RenderUTF8_Blended(font_p, "・", textColor);
+                textSurface = TTF_RenderUTF8_Blended(font_p, "・ ", token->css_property->color);
                 textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
                 SDL_QueryTexture(textTexture, NULL, NULL, &width, &height);
                 SDL_Rect dstrect = {win_padding_x + cor_x - scroll_offset_x, win_padding_y + cor_y - scroll_offset_y, width, height};
@@ -142,19 +127,8 @@ void draw_window(Token *token) {
             }
             if ((token->tag == TAG_H1) || (token->tag == TAG_H2) || (token->tag == TAG_H3) || (token->tag == TAG_P)) {
                 font = font_p;
-                font_bold = false;
-            } else if (token->tag == TAG_STRONG) {
-                font = font_p;
-                font_bold = false;
-            } else if (token->tag == TAG_EM) {
-                font = font_p;
-                font_italic = false;
             } else if (token->tag == TAG_TITLE) {
-                display = true;
                 is_title = false;
-            } else if (token->tag == TAG_A) {
-                underline = false;
-                textColor = (SDL_Color){0, 0, 0};
             }
             break;
         case PLAIN_TEXT:
@@ -162,7 +136,7 @@ void draw_window(Token *token) {
             if (is_title) {
                 SDL_SetWindowTitle(window, token->text);
             }
-            if (!display) {
+            if (token->css_property->display == DISPLAY_NONE) {
                 break;
             }
             if (new_line) {
@@ -173,17 +147,17 @@ void draw_window(Token *token) {
                 cor_x += last_width;
             }
             font_style = TTF_STYLE_NORMAL;
-            if (font_bold) {
+            if (token->css_property->font_weight == FONT_BOLD) {
                 font_style |= TTF_STYLE_BOLD;
             }
-            if (font_italic) {
+            if (token->css_property->font_style == FONT_ITALIC) {
                 font_style |= TTF_STYLE_ITALIC;
             }
-            if (underline) {
+            if (token->css_property->text_decoration == TEXT_UNDERLINE) {
                 font_style |= TTF_STYLE_UNDERLINE;
             }
             TTF_SetFontStyle(font, font_style);
-            textSurface = TTF_RenderUTF8_Blended(font, token->text, textColor);
+            textSurface = TTF_RenderUTF8_Blended(font, token->text, token->css_property->color);
             textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
             SDL_QueryTexture(textTexture, NULL, NULL, &width, &height);
             SDL_Rect dstrect = {win_padding_x + cor_x - scroll_offset_x, win_padding_y + cor_y - scroll_offset_y, width, height};
@@ -192,6 +166,8 @@ void draw_window(Token *token) {
             max_width = (cor_x + width) > max_width ? (cor_x + width) : max_width;
             last_width = width;
             last_height = height + line_space;
+            break;
+        default:
             break;
         }
         token = token->next;
@@ -244,10 +220,11 @@ int main(int argc, char *argv[]) {
     }
 
     // フォントを開く
-    font_p = TTF_OpenFont("./RictyDiminished.ttf", 16);
-    font_h1 = TTF_OpenFont("./RictyDiminished.ttf", 48);
-    font_h2 = TTF_OpenFont("./RictyDiminished.ttf", 32);
-    font_h3 = TTF_OpenFont("./RictyDiminished.ttf", 20);
+    char *font_path = "./RictyDiminished.ttf";
+    font_p = TTF_OpenFont(font_path, font_size_p);
+    font_h1 = TTF_OpenFont(font_path, font_size_h1);
+    font_h2 = TTF_OpenFont(font_path, font_size_h2);
+    font_h3 = TTF_OpenFont(font_path, font_size_h3);
     if (!font_p || !font_h1 || !font_h2 || !font_h3) {
         error("TTF_OpenFont Error: %s\n", TTF_GetError());
     }
@@ -309,7 +286,7 @@ int main(int argc, char *argv[]) {
             changed = false;
         }
 
-        SDL_Delay(2);
+        SDL_Delay(20);
     }
 
     TTF_CloseFont(font_p);
