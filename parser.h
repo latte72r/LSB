@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <SDL2/SDL.h>
+
 #define MAX_TAGS 200
 
 typedef enum { START_TAG, END_TAG, START_TAG_ONLY, PLAIN_TEXT, TK_EOF } TokenKind;
@@ -24,14 +26,27 @@ typedef enum {
     TAG_STRONG,
     TAG_BR,
     TAG_IMG,
-    TAG_TITLE
+    TAG_TITLE,
+    TAG_SECTION
 } TagKind;
+
+typedef struct CssProperty CssProperty;
+
+struct CssProperty {
+    SDL_Color color;
+    int font_size;
+    bool font_bold;
+    bool font_italic;
+    bool text_underline;
+};
+
 typedef struct Token Token;
 
 struct Token {
     TokenKind kind;
     Token *next;
     TagKind tag;
+    CssProperty *css_property;
     char text[200];
     char html_id[20];
     char html_class[20];
