@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-char user_input[20000];
+char user_input[80000];
 Token *token;
 TagKind tag_stack[MAX_TAGS];
 int tag_count = 0;
@@ -93,7 +93,7 @@ void parse_color(char color_string[7], SDL_Color *color) {
 }
 
 CssProperty *parse_css(char *css_style, CssProperty *css_property) {
-    char buffer[20];
+    char buffer[200];
     consume_space(&css_style);
     while (*css_style) {
         consume_space(&css_style);
@@ -227,16 +227,18 @@ CssProperty *parse_css(char *css_style, CssProperty *css_property) {
 }
 
 void consume_style(Token *cur, char **p) {
-    char buffer[40];
-    int i = 0;
+    char buffer[200];
     consume_space(p);
     if (startswith(*p, "id=\"")) {
         (*p) += 4;
+        int i = 0;
+        int n = 0;
         while (*(*p + i) != '\"') {
-            buffer[i] = *(*p + i);
+            buffer[n] = *(*p + i);
             i++;
+            n++;
         }
-        buffer[i] = '\0';
+        buffer[n] = '\0';
         (*p) += (i + 1);
         strcpy(cur->html_id, buffer);
         warning("idは利用できません\n");
@@ -244,11 +246,14 @@ void consume_style(Token *cur, char **p) {
     consume_space(p);
     if (startswith(*p, "class=\"")) {
         *p += 7;
+        int i = 0;
+        int n = 0;
         while (*(*p + i) != '\"') {
-            buffer[i] = *(*p + i);
+            buffer[n] = *(*p + i);
             i++;
+            n++;
         }
-        buffer[i] = '\0';
+        buffer[n] = '\0';
         (*p) += (i + 1);
         strcpy(cur->html_class, buffer);
         warning("classは利用できません\n");
@@ -256,11 +261,14 @@ void consume_style(Token *cur, char **p) {
     consume_space(p);
     if (startswith(*p, "style=\"")) {
         (*p) += 7;
+        int i = 0;
+        int n = 0;
         while (*(*p + i) != '\"') {
-            buffer[i] = *(*p + i);
+            buffer[n] = *(*p + i);
             i++;
+            n++;
         }
-        buffer[i] = '\0';
+        buffer[n] = '\0';
         (*p) += (i + 1);
         parse_css(buffer, cur->css_property);
         // printf("styleを認識しました: %s\n", buffer);
@@ -330,6 +338,9 @@ Token *tokenize() {
             consume_space(&p);
             for (int c = 0; c < supported_count; c++) {
                 if (startswith(p, tag_names[c])) {
+                    if (*(p + strlen(tag_names[c])) != '>') {
+                        continue;
+                    }
                     tag = c;
                     p += strlen(tag_names[c]);
                     tag_selected = true;
@@ -338,7 +349,7 @@ Token *tokenize() {
                 }
             }
             if (!tag_selected) {
-                char buffer[200];
+                char buffer[800];
                 int i = 0;
                 while (*(p + i) != '>') {
                     buffer[i] = *(p + i);
@@ -356,9 +367,11 @@ Token *tokenize() {
             if (stack_pop() != tag) {
                 error("開始タグと終了タグの対応が取れていません: %s\n", tag_names[tag]);
             }
+            css_property = parent->css_property;
             parent = parent->parent;
             cur = new_token(END_TAG, cur, parent);
             cur->tag = tag;
+            cur->css_property = css_property;
             continue;
         }
 
@@ -387,7 +400,35 @@ Token *tokenize() {
         // 開始タグ
         if (startswith(p, "<")) {
             p++;
-            if (startswith(p, "div")) {
+            for (int c = 0; c < supported_count; c++) {
+                if (startswith(p, tag_names[c])) {
+                    if (!isspace(*(p + strlen(tag_names[c]))) && *(p + strlen(tag_names[c])) != '>') {
+                        continue;
+                    }
+                    tag = c;
+                    tag_selected = true;
+                    break;
+                }
+            }
+            if (!tag_selected) {
+                char buffer[800];
+                int i = 0;
+                int j = 0;
+                bool space2 = false;
+                while (*(p + i) != '>') {
+                    if (isspace(*(p + i))) {
+                        space2 = true;
+                    } else if (!space2) {
+                        buffer[j] = *(p + i);
+                        j++;
+                    }
+                    i++;
+                }
+                buffer[j] = '\0';
+                p += (i + 1);
+                warning("開始タグを無視しました: %s\n", buffer);
+                continue;
+            } else if (startswith(p, "div")) {
                 p += 3;
                 consume_space(&p);
                 cur = new_token(START_TAG, cur, parent);
@@ -526,6 +567,27 @@ Token *tokenize() {
                 cur->css_property->text_decoration = cur->parent->css_property->text_decoration;
                 consume_style(cur, &p);
                 parent = cur;
+            } else if (startswith(p, "script")) {
+                p += 6;
+                cur = new_token(START_TAG, cur, parent);
+                cur->tag = TAG_SCRIPT;
+                stack_push(TAG_SCRIPT);
+                cur->css_property->display = DISPLAY_NONE;
+                consume_style(cur, &p);
+                parent = cur;
+            } else if (startswith(p, "pre")) {
+                p += 3;
+                cur = new_token(START_TAG, cur, parent);
+                cur->tag = TAG_PRE;
+                stack_push(TAG_PRE);
+                cur->css_property->display = DISPLAY_BLOCK;
+                cur->css_property->color = cur->parent->css_property->color;
+                cur->css_property->font_size = cur->parent->css_property->font_size;
+                cur->css_property->font_weight = cur->parent->css_property->font_weight;
+                cur->css_property->font_style = cur->parent->css_property->font_style;
+                cur->css_property->text_decoration = cur->parent->css_property->text_decoration;
+                consume_style(cur, &p);
+                parent = cur;
             } else if (startswith(p, "p")) {
                 p += 1;
                 cur = new_token(START_TAG, cur, parent);
@@ -553,28 +615,21 @@ Token *tokenize() {
                 consume_style(cur, &p);
                 parent = cur;
             } else {
-                char buffer[200];
-                int i = 0;
-                int j = 0;
-                bool space2 = false;
-                while (*(p + i) != '>') {
-                    if (isspace(*(p + i))) {
-                        space2 = true;
-                    } else if (!space2) {
-                        buffer[j] = *(p + i);
-                        j++;
-                    }
-                    i++;
-                }
-                buffer[j] = '\0';
-                p += (i + 1);
-                warning("開始タグを無視しました: %s\n", buffer);
-                continue;
+                error("開始タグを認識できません: %s\n", p);
             }
             // printf("開始タグを登録しました: %s\n", tag_names[cur->tag]);
             continue;
-        } else if ((*p != '<') && (*p != '>')) {
-            char buffer[200];
+        }
+
+        // プレーンテキスト
+        if ((*p != '<') && (*p != '>')) {
+            if (parent->tag == TAG_SCRIPT) {
+                while (!startswith(p, "</script>")) {
+                    p++;
+                }
+                continue;
+            }
+            char buffer[4000];
             int i = 0;
             int length = 0;
             if (spaced) {
@@ -602,7 +657,7 @@ Token *tokenize() {
             cur = new_token(PLAIN_TEXT, cur, parent);
             strcpy(cur->text, buffer);
             p += i;
-            cur->css_property->display = cur->parent->css_property->display;
+            cur->css_property->display = DISPLAY_INLINE;
             cur->css_property->color = cur->parent->css_property->color;
             cur->css_property->font_size = cur->parent->css_property->font_size;
             cur->css_property->font_weight = cur->parent->css_property->font_weight;

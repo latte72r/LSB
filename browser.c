@@ -18,6 +18,14 @@ TTF_Font *font_h1;
 TTF_Font *font_h2;
 TTF_Font *font_h3;
 
+typedef struct {
+    SDL_Texture *textTexture;
+    int width;
+    int height;
+} WidgetCache;
+
+WidgetCache caches[MAX_TAGS];
+
 const int win_padding_x = 20;
 const int win_padding_y = 20;
 const int line_space = 10;
@@ -36,6 +44,8 @@ int scroll_height = 0;
 int scroll_offset_x = 0;
 int scroll_offset_y = 0;
 
+int changed = true;
+
 void quit_sdl() {
     SDL_DestroyWindow(window);
     SDL_DestroyRenderer(renderer);
@@ -48,13 +58,16 @@ void draw_window(Token *token) {
     SDL_Surface *textSurface;
     SDL_Texture *textTexture;
     int width, height;
+    int index = 0;
     int cor_x = 0;
     int cor_y = 0;
     int last_width = 0;
     int last_height = 0;
     int max_width = 0;
-    bool new_line = false;
+    bool new_line = true;
     bool is_title = false;
+    char prefix[10] = "";
+    char indent[10] = "";
     int font_style = TTF_STYLE_NORMAL;
     TTF_Font *font = font_p;
 
@@ -62,12 +75,10 @@ void draw_window(Token *token) {
     SDL_RenderClear(renderer);
 
     while (token->kind != TK_EOF) {
+        new_line = ((token->css_property->display == DISPLAY_BLOCK) || new_line);
         switch (token->kind) {
         case START_TAG:
             // printf("START_TAG: %s\n", tag_names[token->tag]);
-            if (token->tag == TAG_DIV || token->tag == TAG_UL || token->tag == TAG_SECTION) {
-                new_line = true;
-            }
             switch (token->tag) {
             case TAG_TITLE:
                 is_title = true;
@@ -88,19 +99,8 @@ void draw_window(Token *token) {
                 font = font_p;
                 break;
             case TAG_LI:
-                cor_x = 0;
-                cor_y += last_height;
-                new_line = false;
-                TTF_SetFontStyle(font_p, TTF_STYLE_BOLD);
-                textSurface = TTF_RenderUTF8_Blended(font_p, "・ ", token->css_property->color);
-                textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
-                SDL_QueryTexture(textTexture, NULL, NULL, &width, &height);
-                SDL_Rect dstrect = {win_padding_x + cor_x - scroll_offset_x, win_padding_y + cor_y - scroll_offset_y, width, height};
-                SDL_RenderCopy(renderer, textTexture, NULL, &dstrect);
-                SDL_FreeSurface(textSurface);
-                max_width = (cor_x + width) > max_width ? (cor_x + width) : max_width;
-                last_width = width;
-                last_height = height + line_space;
+                strcpy(prefix, " •  ");
+                strcpy(indent, "    ");
                 break;
             default:
                 break;
@@ -121,30 +121,58 @@ void draw_window(Token *token) {
             break;
         case END_TAG:
             // printf("END_TAG: %s\n", tag_names[token->tag]);
-            if ((token->tag == TAG_DIV) || (token->tag == TAG_UL) || (token->tag == TAG_P) || (token->tag == TAG_H1) ||
-                (token->tag == TAG_H2) || (token->tag == TAG_H3) || (token->tag == TAG_SECTION)) {
-                new_line = true;
-            }
+            new_line = (token->css_property->display == DISPLAY_BLOCK);
             if ((token->tag == TAG_H1) || (token->tag == TAG_H2) || (token->tag == TAG_H3) || (token->tag == TAG_P)) {
                 font = font_p;
             } else if (token->tag == TAG_TITLE) {
                 is_title = false;
+            } else if (token->tag == TAG_LI) {
+                prefix[0] = '\0';
+                indent[0] = '\0';
             }
             break;
         case PLAIN_TEXT:
             // printf("PLAIN_TEXT: \"%s\"\n", token->text);
             if (is_title) {
                 SDL_SetWindowTitle(window, token->text);
-            }
-            if (token->css_property->display == DISPLAY_NONE) {
                 break;
             }
+            index += 1;
             if (new_line) {
                 cor_x = 0;
                 cor_y += last_height;
                 new_line = false;
             } else {
                 cor_x += last_width;
+            }
+            if (prefix[0] != '\0') {
+                TTF_SetFontStyle(font, TTF_STYLE_BOLD);
+                textSurface = TTF_RenderUTF8_Blended(font, prefix, (SDL_Color){0, 0, 0});
+                textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+                SDL_QueryTexture(textTexture, NULL, NULL, &width, &height);
+                SDL_Rect dstrect = {win_padding_x + cor_x - scroll_offset_x, win_padding_y + cor_y - scroll_offset_y, width, height};
+                SDL_RenderCopy(renderer, textTexture, NULL, &dstrect);
+                SDL_FreeSurface(textSurface);
+                cor_x += width;
+                prefix[0] = '\0';
+            } else if (indent[0] != '\0') {
+                textSurface = TTF_RenderUTF8_Blended(font, indent, (SDL_Color){0, 0, 0});
+                textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+                SDL_QueryTexture(textTexture, NULL, NULL, &width, &height);
+                SDL_Rect dstrect = {win_padding_x + cor_x - scroll_offset_x, win_padding_y + cor_y - scroll_offset_y, width, height};
+                SDL_RenderCopy(renderer, textTexture, NULL, &dstrect);
+                SDL_FreeSurface(textSurface);
+                cor_x += width;
+            }
+            if (!caches[index].textTexture && !changed) {
+                textTexture = caches[index].textTexture;
+                width = caches[index].width;
+                height = caches[index].height;
+                SDL_Rect dstrect = {win_padding_x + cor_x - scroll_offset_x, win_padding_y + cor_y - scroll_offset_y, width, height};
+                SDL_RenderCopy(renderer, textTexture, NULL, &dstrect);
+                last_width = width;
+                last_height = height + line_space;
+                break;
             }
             font_style = TTF_STYLE_NORMAL;
             if (token->css_property->font_weight == FONT_BOLD) {
@@ -166,6 +194,7 @@ void draw_window(Token *token) {
             max_width = (cor_x + width) > max_width ? (cor_x + width) : max_width;
             last_width = width;
             last_height = height + line_space;
+            caches[index] = (WidgetCache){textTexture, width, height};
             break;
         default:
             break;
@@ -177,7 +206,8 @@ void draw_window(Token *token) {
     scroll_height = cor_y + last_height + win_padding_y * 2;
 
     SDL_RenderPresent(renderer);
-    SDL_DestroyTexture(textTexture);
+
+    changed = false;
 }
 
 int main(int argc, char *argv[]) {
@@ -229,6 +259,9 @@ int main(int argc, char *argv[]) {
         error("TTF_OpenFont Error: %s\n", TTF_GetError());
     }
 
+    for (int i = 0; i < MAX_TAGS; i++) {
+        caches[i] = (WidgetCache){NULL, 0, 0};
+    }
     draw_window(token);
 
     bool running = true;

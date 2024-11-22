@@ -11,9 +11,10 @@
 #ifndef BROWSER_PARSER_H
 #define BROWSER_PARSER_H
 
-#define MAX_TAGS 200
+#define MAX_TAGS 2000
 
-static char *tag_names[] = {"div", "span", "p", "a", "h1", "h2", "h3", "ul", "li", "em", "strong", "br", "img", "title", "section"};
+static char *tag_names[] = {"div", "span", "strong", "img", "title", "section", "pre", "script", "p",
+                            "a",   "h1",   "h2",     "h3",  "ul",    "li",      "em",  "br"};
 static const int supported_count = sizeof(tag_names) / sizeof(tag_names[0]);
 
 static char *convert_names[] = {"&copy;", "&lt;", "&gt;", "&amp;", "&quot;", "&apos;"};
@@ -25,6 +26,12 @@ typedef enum { START_TAG, END_TAG, START_TAG_ONLY, PLAIN_TEXT, TK_EOF } TokenKin
 typedef enum {
     TAG_DIV,
     TAG_SPAN,
+    TAG_STRONG,
+    TAG_IMG,
+    TAG_TITLE,
+    TAG_SECTION,
+    TAG_PRE,
+    TAG_SCRIPT,
     TAG_P,
     TAG_A,
     TAG_H1,
@@ -33,11 +40,7 @@ typedef enum {
     TAG_UL,
     TAG_LI,
     TAG_EM,
-    TAG_STRONG,
-    TAG_BR,
-    TAG_IMG,
-    TAG_TITLE,
-    TAG_SECTION
+    TAG_BR
 } TagKind;
 
 typedef enum { FONT_NORMAL, FONT_BOLD, FONT_ITALIC } FontKind;
@@ -63,9 +66,9 @@ struct Token {
     Token *parent;
     TagKind tag;
     CssProperty *css_property;
-    char text[200];
-    char html_id[20];
-    char html_class[20];
+    char text[4000];
+    char html_id[200];
+    char html_class[200];
 };
 
 void error(char *fmt, ...);
