@@ -1,4 +1,5 @@
 
+#include <math.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -17,6 +18,14 @@ TTF_Font *font_h1;
 TTF_Font *font_h2;
 TTF_Font *font_h3;
 
+typedef struct {
+    SDL_Texture *textTexture;
+    int width;
+    int height;
+} WidgetCache;
+
+WidgetCache caches[MAX_TAGS];
+
 const int win_padding_x = 20;
 const int win_padding_y = 20;
 const int line_space = 10;
@@ -24,11 +33,18 @@ const int scroll_step = 20;
 int window_height = 480;
 int window_width = 720;
 
+const int font_size_p = 16;
+const int font_size_h1 = 48;
+const int font_size_h2 = 32;
+const int font_size_h3 = 20;
+
 int scroll_width = 0;
 int scroll_height = 0;
 
 int scroll_offset_x = 0;
 int scroll_offset_y = 0;
+
+int changed = true;
 
 void quit_sdl() {
     SDL_DestroyWindow(window);
@@ -42,80 +58,49 @@ void draw_window(Token *token) {
     SDL_Surface *textSurface;
     SDL_Texture *textTexture;
     int width, height;
+    int index = 0;
     int cor_x = 0;
     int cor_y = 0;
     int last_width = 0;
     int last_height = 0;
     int max_width = 0;
-    bool new_line = false;
-    bool font_bold = false;
-    bool font_italic = false;
-    bool display = true;
+    bool new_line = true;
     bool is_title = false;
-    bool underline = false;
+    char prefix[10] = "";
+    char indent[10] = "";
     int font_style = TTF_STYLE_NORMAL;
     TTF_Font *font = font_p;
-    SDL_Color textColor = {0, 0, 0};
 
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
     SDL_RenderClear(renderer);
 
     while (token->kind != TK_EOF) {
+        new_line = ((token->css_property->display == DISPLAY_BLOCK) || new_line);
         switch (token->kind) {
         case START_TAG:
             // printf("START_TAG: %s\n", tag_names[token->tag]);
-            if ((token->tag == TAG_DIV) || (token->tag == TAG_UL)) {
-                new_line = true;
-            }
             switch (token->tag) {
             case TAG_TITLE:
-                display = false;
                 is_title = true;
                 break;
             case TAG_H1:
                 last_height += 20;
                 font = font_h1;
-                font_bold = true;
                 break;
             case TAG_H2:
                 last_height += 15;
                 font = font_h2;
-                font_bold = true;
                 break;
             case TAG_H3:
                 last_height += 10;
                 font = font_h3;
-                font_bold = true;
                 break;
             case TAG_P:
                 font = font_p;
                 break;
-            case TAG_A:
-                underline = true;
-                textColor = (SDL_Color){0, 0, 255};
-                break;
-            case TAG_STRONG:
-                font = font_p;
-                font_bold = true;
-                break;
-            case TAG_EM:
-                font = font_p;
-                font_italic = true;
-                break;
             case TAG_LI:
-                cor_x = 0;
-                cor_y += last_height;
-                new_line = false;
-                TTF_SetFontStyle(font_p, TTF_STYLE_BOLD);
-                textSurface = TTF_RenderUTF8_Blended(font_p, "・", textColor);
-                textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
-                SDL_QueryTexture(textTexture, NULL, NULL, &width, &height);
-                SDL_Rect dstrect = {win_padding_x + cor_x - scroll_offset_x, win_padding_y + cor_y - scroll_offset_y, width, height};
-                SDL_RenderCopy(renderer, textTexture, NULL, &dstrect);
-                SDL_FreeSurface(textSurface);
-                max_width = (cor_x + width) > max_width ? (cor_x + width) : max_width;
-                last_width = width;
-                last_height = height + line_space;
+                strcpy(prefix, " •  ");
+                strcpy(indent, "    ");
                 break;
             default:
                 break;
@@ -136,35 +121,23 @@ void draw_window(Token *token) {
             break;
         case END_TAG:
             // printf("END_TAG: %s\n", tag_names[token->tag]);
-            if ((token->tag == TAG_DIV) || (token->tag == TAG_UL) || (token->tag == TAG_P) || (token->tag == TAG_H1) ||
-                (token->tag == TAG_H2) || (token->tag == TAG_H3)) {
-                new_line = true;
-            }
+            new_line = (token->css_property->display == DISPLAY_BLOCK);
             if ((token->tag == TAG_H1) || (token->tag == TAG_H2) || (token->tag == TAG_H3) || (token->tag == TAG_P)) {
                 font = font_p;
-                font_bold = false;
-            } else if (token->tag == TAG_STRONG) {
-                font = font_p;
-                font_bold = false;
-            } else if (token->tag == TAG_EM) {
-                font = font_p;
-                font_italic = false;
             } else if (token->tag == TAG_TITLE) {
-                display = true;
                 is_title = false;
-            } else if (token->tag == TAG_A) {
-                underline = false;
-                textColor = (SDL_Color){0, 0, 0};
+            } else if (token->tag == TAG_LI) {
+                prefix[0] = '\0';
+                indent[0] = '\0';
             }
             break;
         case PLAIN_TEXT:
             // printf("PLAIN_TEXT: \"%s\"\n", token->text);
             if (is_title) {
                 SDL_SetWindowTitle(window, token->text);
-            }
-            if (!display) {
                 break;
             }
+            index += 1;
             if (new_line) {
                 cor_x = 0;
                 cor_y += last_height;
@@ -172,18 +145,47 @@ void draw_window(Token *token) {
             } else {
                 cor_x += last_width;
             }
+            if (prefix[0] != '\0') {
+                TTF_SetFontStyle(font, TTF_STYLE_BOLD);
+                textSurface = TTF_RenderUTF8_Blended(font, prefix, (SDL_Color){0, 0, 0});
+                textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+                SDL_QueryTexture(textTexture, NULL, NULL, &width, &height);
+                SDL_Rect dstrect = {win_padding_x + cor_x - scroll_offset_x, win_padding_y + cor_y - scroll_offset_y, width, height};
+                SDL_RenderCopy(renderer, textTexture, NULL, &dstrect);
+                SDL_FreeSurface(textSurface);
+                cor_x += width;
+                prefix[0] = '\0';
+            } else if (indent[0] != '\0') {
+                textSurface = TTF_RenderUTF8_Blended(font, indent, (SDL_Color){0, 0, 0});
+                textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+                SDL_QueryTexture(textTexture, NULL, NULL, &width, &height);
+                SDL_Rect dstrect = {win_padding_x + cor_x - scroll_offset_x, win_padding_y + cor_y - scroll_offset_y, width, height};
+                SDL_RenderCopy(renderer, textTexture, NULL, &dstrect);
+                SDL_FreeSurface(textSurface);
+                cor_x += width;
+            }
+            if (!caches[index].textTexture && !changed) {
+                textTexture = caches[index].textTexture;
+                width = caches[index].width;
+                height = caches[index].height;
+                SDL_Rect dstrect = {win_padding_x + cor_x - scroll_offset_x, win_padding_y + cor_y - scroll_offset_y, width, height};
+                SDL_RenderCopy(renderer, textTexture, NULL, &dstrect);
+                last_width = width;
+                last_height = height + line_space;
+                break;
+            }
             font_style = TTF_STYLE_NORMAL;
-            if (font_bold) {
+            if (token->css_property->font_weight == FONT_BOLD) {
                 font_style |= TTF_STYLE_BOLD;
             }
-            if (font_italic) {
+            if (token->css_property->font_style == FONT_ITALIC) {
                 font_style |= TTF_STYLE_ITALIC;
             }
-            if (underline) {
+            if (token->css_property->text_decoration == TEXT_UNDERLINE) {
                 font_style |= TTF_STYLE_UNDERLINE;
             }
             TTF_SetFontStyle(font, font_style);
-            textSurface = TTF_RenderUTF8_Blended(font, token->text, textColor);
+            textSurface = TTF_RenderUTF8_Blended(font, token->text, token->css_property->color);
             textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
             SDL_QueryTexture(textTexture, NULL, NULL, &width, &height);
             SDL_Rect dstrect = {win_padding_x + cor_x - scroll_offset_x, win_padding_y + cor_y - scroll_offset_y, width, height};
@@ -192,6 +194,9 @@ void draw_window(Token *token) {
             max_width = (cor_x + width) > max_width ? (cor_x + width) : max_width;
             last_width = width;
             last_height = height + line_space;
+            caches[index] = (WidgetCache){textTexture, width, height};
+            break;
+        default:
             break;
         }
         token = token->next;
@@ -201,7 +206,8 @@ void draw_window(Token *token) {
     scroll_height = cor_y + last_height + win_padding_y * 2;
 
     SDL_RenderPresent(renderer);
-    SDL_DestroyTexture(textTexture);
+
+    changed = false;
 }
 
 int main(int argc, char *argv[]) {
@@ -244,14 +250,18 @@ int main(int argc, char *argv[]) {
     }
 
     // フォントを開く
-    font_p = TTF_OpenFont("./RictyDiminished.ttf", 16);
-    font_h1 = TTF_OpenFont("./RictyDiminished.ttf", 48);
-    font_h2 = TTF_OpenFont("./RictyDiminished.ttf", 32);
-    font_h3 = TTF_OpenFont("./RictyDiminished.ttf", 20);
+    char *font_path = "./RictyDiminished.ttf";
+    font_p = TTF_OpenFont(font_path, font_size_p);
+    font_h1 = TTF_OpenFont(font_path, font_size_h1);
+    font_h2 = TTF_OpenFont(font_path, font_size_h2);
+    font_h3 = TTF_OpenFont(font_path, font_size_h3);
     if (!font_p || !font_h1 || !font_h2 || !font_h3) {
         error("TTF_OpenFont Error: %s\n", TTF_GetError());
     }
 
+    for (int i = 0; i < MAX_TAGS; i++) {
+        caches[i] = (WidgetCache){NULL, 0, 0};
+    }
     draw_window(token);
 
     bool running = true;
@@ -266,6 +276,20 @@ int main(int argc, char *argv[]) {
             } else if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
                 window_width = event.window.data1;
                 window_height = event.window.data2;
+
+                if (scroll_offset_x <= 0 || scroll_width < window_width) {
+                    scroll_offset_x = 0;
+                } else if (scroll_offset_x > scroll_width - window_width) {
+                    scroll_offset_x = scroll_width - window_width;
+                }
+
+                if (scroll_offset_y <= 0 || scroll_height < window_height) {
+                    scroll_offset_y = 0;
+                } else if (scroll_offset_y > scroll_height - window_height) {
+                    scroll_offset_y = scroll_height - window_height;
+                }
+
+                // printf("window_width: %d, window_height: %d\n", window_width, window_height);
                 SDL_RenderSetLogicalSize(renderer, window_width, window_height);
                 changed = true;
             }
@@ -284,15 +308,15 @@ int main(int argc, char *argv[]) {
                 scroll_offset_y -= scroll_step;
             }
 
-            if (scroll_offset_x < 0) {
+            if (scroll_offset_x <= 0 || scroll_width < window_width) {
                 scroll_offset_x = 0;
-            } else if (scroll_offset_x > scroll_width - window_width && scroll_width > window_width) {
+            } else if (scroll_offset_x > scroll_width - window_width) {
                 scroll_offset_x = scroll_width - window_width;
             }
 
-            if (scroll_offset_y < 0) {
+            if (scroll_offset_y <= 0 || scroll_height < window_height) {
                 scroll_offset_y = 0;
-            } else if (scroll_offset_y > scroll_height - window_height && scroll_height > window_height) {
+            } else if (scroll_offset_y > scroll_height - window_height) {
                 scroll_offset_y = scroll_height - window_height;
             }
 
@@ -308,7 +332,7 @@ int main(int argc, char *argv[]) {
             changed = false;
         }
 
-        SDL_Delay(2);
+        SDL_Delay(20);
     }
 
     TTF_CloseFont(font_p);
