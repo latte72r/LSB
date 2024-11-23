@@ -104,7 +104,7 @@ CssProperty *parse_css(char *css_style, CssProperty *css_property) {
             css_style += 6;
             consume_space(&css_style);
             int i = 0;
-            while (*css_style != ';') {
+            while (*css_style != ';' && *css_style != '\0') {
                 buffer[i] = *css_style;
                 i++;
                 css_style++;
@@ -116,7 +116,7 @@ CssProperty *parse_css(char *css_style, CssProperty *css_property) {
             css_style += 10;
             consume_space(&css_style);
             int i = 0;
-            while (*css_style != ';') {
+            while (*css_style != ';' && *css_style != '\0') {
                 buffer[i] = *css_style;
                 i++;
                 css_style++;
@@ -132,7 +132,7 @@ CssProperty *parse_css(char *css_style, CssProperty *css_property) {
             css_style += 12;
             consume_space(&css_style);
             int i = 0;
-            while (*css_style != ';') {
+            while (*css_style != ';' && *css_style != '\0') {
                 buffer[i] = *css_style;
                 i++;
                 css_style++;
@@ -150,7 +150,7 @@ CssProperty *parse_css(char *css_style, CssProperty *css_property) {
             css_style += 11;
             consume_space(&css_style);
             int i = 0;
-            while (*css_style != ';') {
+            while (*css_style != ';' && *css_style != '\0') {
                 buffer[i] = *css_style;
                 i++;
                 css_style++;
@@ -168,7 +168,7 @@ CssProperty *parse_css(char *css_style, CssProperty *css_property) {
             css_style += 15;
             consume_space(&css_style);
             int i = 0;
-            while (*css_style != ';') {
+            while (*css_style != ';' && *css_style != '\0') {
                 buffer[i] = *css_style;
                 i++;
                 css_style++;
@@ -186,7 +186,7 @@ CssProperty *parse_css(char *css_style, CssProperty *css_property) {
             css_style += 8;
             consume_space(&css_style);
             int i = 0;
-            while (*css_style != ';') {
+            while (*css_style != ';' && *css_style != '\0') {
                 buffer[i] = *css_style;
                 i++;
                 css_style++;
@@ -206,7 +206,7 @@ CssProperty *parse_css(char *css_style, CssProperty *css_property) {
             int i = 0;
             int j = 0;
             bool space2 = false;
-            while (*(css_style + i) != ';') {
+            while (*(css_style + i) != ';' && *(css_style + i) != '\0') {
                 if (*(css_style + i) == ':') {
                     space2 = true;
                 } else if (!space2) {
