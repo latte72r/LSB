@@ -18,18 +18,14 @@ int tag_count = 0;
 void error(char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
-  fprintf(stderr, "\e[0;31m");
   vfprintf(stderr, fmt, ap);
-  fprintf(stderr, "\e[0;39m");
   exit(1);
 }
 
 void warning(char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
-  fprintf(stdout, "\e[0;33m");
   vfprintf(stdout, fmt, ap);
-  fprintf(stdout, "\e[0;39m");
 }
 
 Token *new_token(TokenKind kind, Token *cur, Token *parent) {

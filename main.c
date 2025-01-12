@@ -101,7 +101,7 @@ void draw_window(Token *token) {
         font = font_p;
         break;
       case TAG_LI:
-        strcpy(prefix, " •  ");
+        strcpy(prefix, "  * ");
         strcpy(indent, "    ");
         break;
       default:
