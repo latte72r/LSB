@@ -1,4 +1,6 @@
 
+#define _CRT_SECURE_NO_WARNINGS
+
 #include <math.h>
 #include <stdarg.h>
 #include <stdbool.h>
